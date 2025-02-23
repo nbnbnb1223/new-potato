@@ -19,9 +19,19 @@ function addMessage(content, isUser = false) {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
+// 设置发送按钮状态
+function setButtonState(isLoading) {
+    sendButton.disabled = isLoading;
+    sendButton.textContent = isLoading ? '发送中...' : '发送';
+    userInput.disabled = isLoading;
+}
+
 // 发送消息到服务器
 async function sendMessage(message) {
     try {
+        // 设置加载状态
+        setButtonState(true);
+        
         // 添加用户消息到界面
         addMessage(message, true);
         
@@ -38,6 +48,10 @@ async function sendMessage(message) {
             body: JSON.stringify({ message })
         });
         
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         // 创建新的AI消息容器
         const aiMessageDiv = document.createElement('div');
         aiMessageDiv.className = 'message ai';
@@ -49,6 +63,7 @@ async function sendMessage(message) {
         // 处理流式响应
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let accumulatedContent = '';
         
         while (true) {
             const { done, value } = await reader.read();
@@ -65,7 +80,8 @@ async function sendMessage(message) {
                     try {
                         const parsed = JSON.parse(data);
                         if (parsed.content) {
-                            aiContentDiv.textContent += parsed.content;
+                            accumulatedContent += parsed.content;
+                            aiContentDiv.textContent = accumulatedContent;
                             messagesContainer.scrollTop = messagesContainer.scrollHeight;
                         }
                     } catch (e) {
@@ -78,17 +94,24 @@ async function sendMessage(message) {
         console.error('发送消息失败:', error);
         let errorMessage = '抱歉，发生了一些错误，请稍后重试。';
         if (error.response) {
-            const errorData = await error.response.json();
-            errorMessage = errorData.error || errorMessage;
+            try {
+                const errorData = await error.response.json();
+                errorMessage = errorData.error || errorMessage;
+            } catch (e) {
+                console.error('解析错误响应失败:', e);
+            }
         }
         addMessage(errorMessage, false);
+    } finally {
+        // 恢复按钮状态
+        setButtonState(false);
     }
 }
 
 // 自动调整输入框高度
 function adjustTextareaHeight() {
     userInput.style.height = 'auto';
-    userInput.style.height = userInput.scrollHeight + 'px';
+    userInput.style.height = Math.min(userInput.scrollHeight, 200) + 'px';
 }
 
 // 事件监听器
@@ -99,7 +122,10 @@ sendButton.addEventListener('click', () => {
     }
 });
 
-userInput.addEventListener('keypress', (e) => {
+// 监听输入框事件
+userInput.addEventListener('input', adjustTextareaHeight);
+
+userInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         const message = userInput.value.trim();
@@ -109,4 +135,6 @@ userInput.addEventListener('keypress', (e) => {
     }
 });
 
-userInput.addEventListener('input', adjustTextareaHeight);
+// 初始化
+adjustTextareaHeight();
+userInput.focus();
